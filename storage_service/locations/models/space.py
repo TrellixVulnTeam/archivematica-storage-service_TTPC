@@ -145,6 +145,7 @@ class Space(models.Model):
     NFS = "NFS"
     OFFLINE_REPLICA_STAGING = "REPLICA"
     PIPELINE_LOCAL_FS = "PIPE_FS"
+    RCLONE = "RCLONE"
     SWIFT = "SWIFT"
     GPG = "GPG"
     S3 = "S3"
@@ -164,6 +165,7 @@ class Space(models.Model):
         (NFS, _("NFS")),
         (OFFLINE_REPLICA_STAGING, _("Write-Only Replica Staging on Local Filesystem")),
         (PIPELINE_LOCAL_FS, _("Pipeline Local Filesystem")),
+        (RCLONE, _("RClone")),
         (SWIFT, _("Swift")),
         (S3, _("S3")),
     )
