@@ -88,11 +88,12 @@ class RClone(models.Model):
         something about itself. If we cannot retrieve metadata about it then
         we attempt to create the bucket, else, we raise a StorageException.
         """
-        LOGGER.debug("Test the container '%s' exists", self.container)
+        LOGGER.debug("Test that container '%s' exists", self.container)
         prefixed_container_name = "{}{}".format(self.remote_prefix, self.container)
         cmd = ["ls", prefixed_container_name]
         _, stderr = self._execute_subprocess(cmd)
         if stderr:
+            LOGGER.info("Creating container '%s'", self.container)
             create_container_cmd = ["mkdir", prefixed_container_name]
             _, stderr = self._execute_subprocess(create_container_cmd)
             if stderr:
