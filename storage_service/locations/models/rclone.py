@@ -32,8 +32,12 @@ class RClone(models.Model):
         verbose_name = _("RClone")
         app_label = _("locations")
 
-    # TODO: Add support for DIP Storage and Transfer Source as well?
-    ALLOWED_LOCATION_PURPOSE = [Location.AIP_STORAGE, Location.REPLICATOR]
+    # TODO: Add support for Transfer Source?
+    ALLOWED_LOCATION_PURPOSE = [
+        Location.AIP_STORAGE,
+        Location.DIP_STORAGE,
+        Location.REPLICATOR,
+    ]
 
     def _execute_subprocess(self, subcommand):
         """Execute subprocess command.
