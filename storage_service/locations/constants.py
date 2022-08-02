@@ -92,7 +92,7 @@ PROTOCOL = {
     models.Space.RCLONE: {
         "model": models.RClone,
         "form": forms.RCloneForm,
-        "fields": [],
+        "fields": ["container"],
     },
     models.Space.SWIFT: {
         "model": models.Swift,

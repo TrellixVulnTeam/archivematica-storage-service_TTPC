@@ -21,6 +21,13 @@ class RClone(models.Model):
 
     space = models.OneToOneField("Space", to_field="uuid", on_delete=models.CASCADE)
 
+    container = models.CharField(
+        max_length=64,
+        verbose_name=_("Bucket or Container Name"),
+        blank=True,
+        help_text=_("Bucket or Container Name"),
+    )
+
     class Meta:
         verbose_name = _("RClone")
         app_label = _("locations")
@@ -48,7 +55,7 @@ class RClone(models.Model):
                 if stderr:
                     LOGGER.warning(stderr)
 
-                return stdout
+                return stdout, stderr
         except FileNotFoundError as err:
             err_msg = "rclone executable not found at path. Details: {}".format(err)
             LOGGER.error(err_msg)
@@ -64,15 +71,38 @@ class RClone(models.Model):
 
     @property
     def remote_prefix(self):
-        """Return first remote prefix from rclone config (e.g. `local:`."""
-        remotes = six.ensure_str(
-            self._execute_subprocess(["listremotes"]), errors="ignore"
-        )
+        """Return first remote prefix from rclone config (e.g. `local:`.
+
+        TODO: This assumes there is only one remote, which will prevent
+        multiple RClone Spaces from being used concurrently. Eventually we
+        should parse this in a more sophisticated way, perhaps comparing
+        each remote's name against a name field on the model.
+        """
+        remotes, _ = self._execute_subprocess(["listremotes"])
+        remotes = six.ensure_str(remotes)
         LOGGER.debug("rclone listremotes output: %s", remotes)
         return remotes.split("\n")[0]
 
+    def _ensure_container_exists(self):
+        """Ensure that the S3 bucket or other container exists by asking it
+        something about itself. If we cannot retrieve metadata about it then
+        we attempt to create the bucket, else, we raise a StorageException.
+        """
+        LOGGER.debug("Test the container '%s' exists", self.container)
+        prefixed_container_name = "{}{}".format(self.remote_prefix, self.container)
+        cmd = ["ls", prefixed_container_name]
+        _, stderr = self._execute_subprocess(cmd)
+        if stderr:
+            create_container_cmd = ["mkdir", prefixed_container_name]
+            _, stderr = self._execute_subprocess(create_container_cmd)
+            if stderr:
+                err_msg = "Unable to find or create container {}".format(
+                    prefixed_container_name
+                )
+                LOGGER.error(err_msg)
+                raise StorageException(err_msg)
+
     # TODO: Implement browse
-    # Question: Is this necessary if space isn't used as Transfer Source?
     def browse(self, path):
         raise NotImplementedError(_("RClone space does not yet implement browse"))
 
@@ -90,6 +120,12 @@ class RClone(models.Model):
         if not utils.package_is_file(src_path):
             subcommand = "copy"
 
+        container = ""
+        if self.container:
+            self._ensure_container_exists()
+            container = self.container + "/"
+            src_path = src_path.lstrip("/")
+
         # Directories need to have trailing slashes to ensure they are created
         # on the staging path.
         if not utils.package_is_file(dest_path):
@@ -97,20 +133,28 @@ class RClone(models.Model):
 
         cmd = [
             subcommand,
-            "{}{}".format(self.remote_prefix, src_path),
+            "{}{}{}".format(self.remote_prefix, container, src_path),
             dest_path,
         ]
         self._execute_subprocess(cmd)
 
     def move_from_storage_service(self, src_path, dest_path, package=None):
         """ Moves self.staging_path/src_path to dest_path."""
-        self.space.create_local_directory(dest_path)
+        if not self.container:
+            self.space.create_local_directory(dest_path)
         subcommand = "copyto"
         if not utils.package_is_file(src_path):
             subcommand = "copy"
+
+        container = ""
+        if self.container:
+            self._ensure_container_exists()
+            container = self.container + "/"
+            dest_path = dest_path.lstrip("/")
+
         cmd = [
             subcommand,
             src_path,
-            "{}{}".format(self.remote_prefix, dest_path),
+            "{}{}{}".format(self.remote_prefix, container, dest_path),
         ]
         self._execute_subprocess(cmd)

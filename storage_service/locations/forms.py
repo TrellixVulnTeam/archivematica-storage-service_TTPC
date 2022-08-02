@@ -258,7 +258,7 @@ class OfflineReplicaStagingForm(forms.ModelForm):
 class RCloneForm(forms.ModelForm):
     class Meta:
         model = models.RClone
-        fields = ()
+        fields = ("container",)
 
 
 class LocationForm(forms.ModelForm):
