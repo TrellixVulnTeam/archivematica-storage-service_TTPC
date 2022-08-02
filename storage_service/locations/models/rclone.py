@@ -105,11 +105,54 @@ class RClone(models.Model):
 
     # TODO: Implement browse
     def browse(self, path):
+        """
+        Returns a dictionary with keys 'entries', 'directories' and 'properties'.
+
+        'entries' is a list of strings, one for each entry in that directory, both file-like and folder-like.
+        'directories' is a list of strings for each folder-like entry. Each entry should also be listed in 'entries'.
+        'properties' is a dictionary that may contain additional information for the entries.  Keys are the entry name found in 'entries', values are a dictionary containing extra information. 'properties' may not contain all values from 'entries'.
+
+        E.g.
+        {
+            'entries': ['BagTransfer.zip', 'Images', 'Multimedia', 'OCRImage'],
+            'directories': ['Images', 'Multimedia', 'OCRImage'],
+            'properties': {
+                'Images': {'object count': 10},
+                'Multimedia': {'object count': 7},
+                'OCRImage': {'object count': 1}
+            },
+        }
+
+        Values in the properties dict vary depending on the providing Space but may include:
+        'size': Size of the object
+        'object count': Number of objects in the directory, including children
+        'timestamp': Last modified timestamp.
+        'verbose name': Verbose name of the object
+        See each Space's browse for details.
+
+        :param str path: Full path to return info for
+        :return: Dictionary of object information detailed above.
+        """
         raise NotImplementedError(_("RClone space does not yet implement browse"))
 
-    # TODO: Implement deletion
     def delete_path(self, delete_path):
-        raise NotImplementedError(_("RClone space does not yet implement deletion"))
+        if delete_path.startswith(os.sep):
+            LOGGER.info(
+                "Rclone path to delete {} begins with {}; removing from path prior to deletion".format(
+                    delete_path, os.sep
+                )
+            )
+            delete_path = delete_path.lstrip(os.sep)
+        if self.container:
+            delete_path = "{}{}{}".format(
+                self.remote_prefix, self.container + "/", delete_path.lstrip("/")
+            )
+        cmd = ["delete", delete_path]
+        _, stderr = self._execute_subprocess(cmd)
+        if stderr:
+            err_msg = "Unable to delete package at path {}".format(delete_path)
+            LOGGER.error(err_msg)
+            raise StorageException(err_msg)
 
     def move_to_storage_service(self, src_path, dest_path, dest_space):
         """ Moves src_path to dest_space.staging_path/dest_path. """
