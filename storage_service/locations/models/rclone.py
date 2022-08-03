@@ -75,7 +75,7 @@ class RClone(models.Model):
 
     @property
     def remote_prefix(self):
-        """Return first remote prefix from rclone config (e.g. `local:`.
+        """Return first remote prefix from rclone config (e.g. `local:`).
 
         TODO: This assumes there is only one remote, which will prevent
         multiple RClone Spaces from being used concurrently. Eventually we
