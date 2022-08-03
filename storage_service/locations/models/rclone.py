@@ -21,11 +21,17 @@ class RClone(models.Model):
 
     space = models.OneToOneField("Space", to_field="uuid", on_delete=models.CASCADE)
 
+    remote_name = models.CharField(
+        max_length=64,
+        verbose_name=_("Remote Name"),
+        blank=True,
+        help_text=_("Must match rclone environment variables"),
+    )
     container = models.CharField(
         max_length=64,
         verbose_name=_("Bucket or Container Name"),
         blank=True,
-        help_text=_("Bucket or Container Name"),
+        help_text=_("S3 bucket or object store container name"),
     )
 
     class Meta:
@@ -83,9 +89,15 @@ class RClone(models.Model):
         each remote's name against a name field on the model.
         """
         remotes, _ = self._execute_subprocess(["listremotes"])
-        remotes = six.ensure_str(remotes)
         LOGGER.debug("rclone listremotes output: %s", remotes)
-        return remotes.split("\n")[0]
+        remotes = six.ensure_str(remotes).split("\n")
+
+        for remote in remotes:
+            if remote.startswith(self.remote_name.lower()):
+                LOGGER.debug("rclone remote selected: %s", remote)
+                return remote
+
+        raise StorageException("rclone remote matching %s not found", self.remote_name)
 
     def _ensure_container_exists(self):
         """Ensure that the S3 bucket or other container exists by asking it
