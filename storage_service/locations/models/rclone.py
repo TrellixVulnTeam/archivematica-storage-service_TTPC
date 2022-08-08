@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
+import json
 import logging
 import os
 import six
@@ -38,11 +39,11 @@ class RClone(models.Model):
         verbose_name = _("RClone")
         app_label = _("locations")
 
-    # TODO: Add support for Transfer Source?
     ALLOWED_LOCATION_PURPOSE = [
         Location.AIP_STORAGE,
         Location.DIP_STORAGE,
         Location.REPLICATOR,
+        Location.TRANSFER_SOURCE,
     ]
 
     def _execute_subprocess(self, subcommand):
@@ -119,39 +120,57 @@ class RClone(models.Model):
                 LOGGER.error(err_msg)
                 raise StorageException(err_msg)
 
-    # TODO: Implement browse
     def browse(self, path):
-        """
-        Returns a dictionary with keys 'entries', 'directories' and 'properties'.
+        """Browse RClone location."""
+        LOGGER.debug("Browsing //%s/%s in RClone Space", self.container, path)
+        path = path.lstrip("/")
 
-        'entries' is a list of strings, one for each entry in that directory, both file-like and folder-like.
-        'directories' is a list of strings for each folder-like entry. Each entry should also be listed in 'entries'.
-        'properties' is a dictionary that may contain additional information for the entries.  Keys are the entry name found in 'entries', values are a dictionary containing extra information. 'properties' may not contain all values from 'entries'.
+        container = ""
+        if self.container:
+            self._ensure_container_exists()
+            container = self.container + "/"
 
-        E.g.
-        {
-            'entries': ['BagTransfer.zip', 'Images', 'Multimedia', 'OCRImage'],
-            'directories': ['Images', 'Multimedia', 'OCRImage'],
-            'properties': {
-                'Images': {'object count': 10},
-                'Multimedia': {'object count': 7},
-                'OCRImage': {'object count': 1}
-            },
+        prefixed_path = "{}{}{}".format(self.remote_prefix, container, path)
+        cmd = ["lsjson", prefixed_path]
+        stdout, stderr = self._execute_subprocess(cmd)
+        LOGGER.debug("lsf output: %s", stdout)
+
+        if stderr:
+            err_msg = "Unable to browse rclone space at path {}".format(prefixed_path)
+            LOGGER.error(err_msg)
+            raise StorageException(err_msg)
+
+        directories = set()
+        entries = set()
+        properties = {}
+
+        objects = json.loads(six.ensure_str(stdout))
+        for object_ in objects:
+            name = object_.get("Name")
+
+            entries.add(name)
+
+            is_dir = object_.get("IsDir")
+            if is_dir and is_dir is True:
+                directories.add(name)
+                properties[name] = {
+                    "timestamp": object_.get("ModTime"),
+                }
+            else:
+                properties[name] = {
+                    "size": object_.get("Size"),
+                    "timestamp": object_.get("ModTime"),
+                    "mimetype": object_.get("MimeType"),
+                }
+
+        return {
+            "directories": list(directories),
+            "entries": list(entries),
+            "properties": properties,
         }
 
-        Values in the properties dict vary depending on the providing Space but may include:
-        'size': Size of the object
-        'object count': Number of objects in the directory, including children
-        'timestamp': Last modified timestamp.
-        'verbose name': Verbose name of the object
-        See each Space's browse for details.
-
-        :param str path: Full path to return info for
-        :return: Dictionary of object information detailed above.
-        """
-        raise NotImplementedError(_("RClone space does not yet implement browse"))
-
     def delete_path(self, delete_path):
+        """Delete package."""
         if delete_path.startswith(os.sep):
             LOGGER.info(
                 "Rclone path to delete {} begins with {}; removing from path prior to deletion".format(
