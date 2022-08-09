@@ -82,13 +82,7 @@ class RClone(models.Model):
 
     @property
     def remote_prefix(self):
-        """Return first remote prefix from rclone config (e.g. `local:`).
-
-        TODO: This assumes there is only one remote, which will prevent
-        multiple RClone Spaces from being used concurrently. Eventually we
-        should parse this in a more sophisticated way, perhaps comparing
-        each remote's name against a name field on the model.
-        """
+        """Return remote prefix from env vars matching case-insensitive RClone.remote_name."""
         remotes, _ = self._execute_subprocess(["listremotes"])
         LOGGER.debug("rclone listremotes output: %s", remotes)
         remotes = six.ensure_str(remotes).split("\n")
