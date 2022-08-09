@@ -128,7 +128,7 @@ class RClone(models.Model):
         container = ""
         if self.container:
             self._ensure_container_exists()
-            container = self.container + "/"
+            container = os.path.join(self.container, "")
 
         prefixed_path = "{}{}{}".format(self.remote_prefix, container, path)
         cmd = ["lsjson", prefixed_path]
@@ -182,7 +182,7 @@ class RClone(models.Model):
         container = ""
         if self.container:
             self._ensure_container_exists()
-            container = self.container + "/"
+            container = os.path.join(self.container, "")
 
         cmd = [
             "delete",
@@ -208,7 +208,7 @@ class RClone(models.Model):
         container = ""
         if self.container:
             self._ensure_container_exists()
-            container = self.container + "/"
+            container = os.path.join(self.container, "")
 
         # Directories need to have trailing slashes to ensure they are created
         # on the staging path.
@@ -235,7 +235,7 @@ class RClone(models.Model):
         container = ""
         if self.container:
             self._ensure_container_exists()
-            container = self.container + "/"
+            container = os.path.join(self.container, "")
 
         cmd = [
             subcommand,
