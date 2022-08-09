@@ -178,11 +178,16 @@ class RClone(models.Model):
                 )
             )
             delete_path = delete_path.lstrip(os.sep)
+
+        container = ""
         if self.container:
-            delete_path = "{}{}{}".format(
-                self.remote_prefix, self.container + "/", delete_path.lstrip("/")
-            )
-        cmd = ["delete", delete_path]
+            self._ensure_container_exists()
+            container = self.container + "/"
+
+        cmd = [
+            "delete",
+            "{}{}{}".format(self.remote_prefix, container, delete_path.lstrip("/")),
+        ]
         _, stderr = self._execute_subprocess(cmd)
         if stderr:
             err_msg = "Unable to delete package at path {}".format(delete_path)
@@ -193,21 +198,21 @@ class RClone(models.Model):
         """ Moves src_path to dest_space.staging_path/dest_path. """
         # strip leading slash on src_path
         src_path = src_path.rstrip(".")
+        src_path = src_path.lstrip("/")
         dest_path = dest_path.rstrip(".")
 
         subcommand = "copyto"
-        if not utils.package_is_file(src_path):
+        if utils.package_is_file(src_path) is False:
             subcommand = "copy"
 
         container = ""
         if self.container:
             self._ensure_container_exists()
             container = self.container + "/"
-            src_path = src_path.lstrip("/")
 
         # Directories need to have trailing slashes to ensure they are created
         # on the staging path.
-        if not utils.package_is_file(dest_path):
+        if utils.package_is_file(dest_path) is False:
             dest_path = os.path.join(dest_path, "")
 
         cmd = [
@@ -219,17 +224,18 @@ class RClone(models.Model):
 
     def move_from_storage_service(self, src_path, dest_path, package=None):
         """ Moves self.staging_path/src_path to dest_path."""
+        dest_path = dest_path.lstrip("/")
+
         if not self.container:
             self.space.create_local_directory(dest_path)
         subcommand = "copyto"
-        if not utils.package_is_file(src_path):
+        if utils.package_is_file(src_path) is False:
             subcommand = "copy"
 
         container = ""
         if self.container:
             self._ensure_container_exists()
             container = self.container + "/"
-            dest_path = dest_path.lstrip("/")
 
         cmd = [
             subcommand,
