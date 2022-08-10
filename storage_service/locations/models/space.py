@@ -151,7 +151,7 @@ class Space(models.Model):
     S3 = "S3"
     # These will not be displayed in the Space Create GUI (see locations/forms.py)
     BETA_PROTOCOLS = {}
-    OBJECT_STORAGE = {DATAVERSE, DSPACE, DSPACE_REST, DURACLOUD, SWIFT, S3, RCLONE}
+    OBJECT_STORAGE = {DATAVERSE, DSPACE, DSPACE_REST, DURACLOUD, RCLONE, SWIFT, S3}
     ACCESS_PROTOCOL_CHOICES = (
         (ARKIVUM, _("Arkivum")),
         (DATAVERSE, _("Dataverse")),
