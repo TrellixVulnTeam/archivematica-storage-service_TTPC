@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("locations", "0031_auto_20220802_1226"),
+        ("locations", "0031_rclone_space"),
     ]
 
     operations = [
