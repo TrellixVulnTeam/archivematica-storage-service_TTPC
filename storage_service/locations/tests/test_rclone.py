@@ -122,21 +122,18 @@ def test_rclone_delete_no_container(mocker, rclone_aip_no_container):
 
 
 @pytest.mark.parametrize(
-    "subprocess_returns, creates_container, raises_storage_exception",
+    "subprocess_return_code, raises_storage_exception",
     [
-        # Test case where container already exists - first call returns no stderr.
-        ([(None, None)], False, False),
-        # Test case where container doesn't exist but is created on second call.
-        ([(None, "error"), (None, None)], True, False),
-        # Test case where container doesn't exist and creating fails.
-        ([(None, "error"), (None, "error")], True, True),
+        # Test case where container already exists or is created.
+        (0, False),
+        # Test case where container doesn't exist and creating fails, resulting in exception.
+        (1, True),
     ],
 )
 def test_rclone_ensure_container_exists(
     mocker,
     rclone_space,
-    subprocess_returns,
-    creates_container,
+    subprocess_return_code,
     raises_storage_exception,
 ):
     mocker.patch(
@@ -144,40 +141,40 @@ def test_rclone_ensure_container_exists(
         return_value="testremote:",
         new_callable=mocker.PropertyMock,
     )
-    execute_subprocess = mocker.patch(
-        "locations.models.rclone.RClone._execute_subprocess"
-    )
-    execute_subprocess.side_effect = subprocess_returns
+    subprocess = mocker.patch("locations.models.rclone.subprocess")
+    subprocess.Popen.return_value.returncode = subprocess_return_code
+    subprocess.Popen.return_value.communicate.return_value = ("stdout", "stderr")
 
     if not raises_storage_exception:
         rclone_space._ensure_container_exists()
-        assert execute_subprocess.call_count == len(subprocess_returns)
-        if creates_container:
-            execute_subprocess.assert_called_with(["mkdir", "testremote:testcontainer"])
     else:
         with pytest.raises(models.StorageException):
             rclone_space._ensure_container_exists()
-            execute_subprocess.assert_called_with(["mkdir", "testremote:testcontainer"])
+            subprocess.assert_called_with(["mkdir", "testremote:testcontainer"])
 
 
 @pytest.mark.parametrize(
-    "listremotes_return, expected_return, raises_storage_exception",
+    "listremotes_return, expected_return, subprocess_return_code, raises_storage_exception",
     [
         # One matching remote returned from listremotes.
-        ((b"testremote:\n", None), "testremote:", False),
+        (b"testremote:\n", "testremote:", 0, False),
         # Several remotes returned from listremotes, including a match.
-        ((b"another-remote:\ntestremote:\n", None), "testremote:", False),
+        (b"another-remote:\ntestremote:\n", "testremote:", 0, False),
         # Several remotes returned from listremotes, no match.
-        ((b"another-remote:\nnon-matching-remote:\n", None), None, True),
+        (b"another-remote:\nnon-matching-remote:\n", None, 1, True),
     ],
 )
 def test_rclone_remote_prefix(
-    mocker, rclone_space, listremotes_return, expected_return, raises_storage_exception
+    mocker,
+    rclone_space,
+    listremotes_return,
+    expected_return,
+    subprocess_return_code,
+    raises_storage_exception,
 ):
-    execute_subprocess = mocker.patch(
-        "locations.models.rclone.RClone._execute_subprocess"
-    )
-    execute_subprocess.return_value = listremotes_return
+    subprocess = mocker.patch("locations.models.rclone.subprocess")
+    subprocess.Popen.return_value.communicate.return_value = (listremotes_return, "")
+    subprocess.Popen.return_value.returncode = subprocess_return_code
 
     if not raises_storage_exception:
         remote_prefix = rclone_space.remote_prefix
@@ -188,29 +185,34 @@ def test_rclone_remote_prefix(
 
 
 @pytest.mark.parametrize(
-    "subprocess_return, exception_raised",
+    "subprocess_communicate_return, subprocess_return_code, exception_raised",
     [
-        # Test that stdout and stderr are returned.
-        (("stdout", "stderr"), False),
-        # Test that exception results in StorageException.
-        ((None, "stderr"), True),
+        # Test that stdout is returned
+        (("stdout", ""), 0, False),
+        # Test that non-zero return code results in StorageException.
+        (("", ""), 1, True),
     ],
 )
 def test_rclone_execute_subprocess(
-    mocker, rclone_space, subprocess_return, exception_raised
+    mocker,
+    rclone_space,
+    subprocess_communicate_return,
+    subprocess_return_code,
+    exception_raised,
 ):
     subcommand = ["listremotes"]
 
+    subprocess = mocker.patch("locations.models.rclone.subprocess")
+    subprocess.Popen.return_value.communicate.return_value = (
+        subprocess_communicate_return
+    )
+    subprocess.Popen.return_value.returncode = subprocess_return_code
     if exception_raised:
         with pytest.raises(models.StorageException):
             rclone_space._execute_subprocess(subcommand)
     else:
-        subprocess = mocker.patch("locations.models.rclone.subprocess")
-        subprocess.Popen.return_value.__enter__.return_value.communicate.return_value = (
-            subprocess_return
-        )
         return_value = rclone_space._execute_subprocess(subcommand)
-        assert return_value == subprocess_return
+        assert return_value == subprocess_communicate_return[0]
 
 
 @pytest.mark.parametrize(
@@ -354,7 +356,7 @@ def test_rclone_move_from_storage_service_no_container(
     [
         # Test with stdout as expected.
         (
-            (MOCK_LSJSON_STDOUT, None),
+            MOCK_LSJSON_STDOUT,
             {
                 "dir1": {"timestamp": "timevalue1"},
                 "dir2": {"timestamp": "timevalue2"},
@@ -372,7 +374,7 @@ def test_rclone_move_from_storage_service_no_container(
             False,
         ),
         # Test that stderr raises exception
-        ((None, "error"), None, True),
+        (b"", None, True),
     ],
 )
 def test_rclone_browse(
@@ -411,7 +413,7 @@ def test_rclone_browse(
     [
         # Test with stdout as expected.
         (
-            (MOCK_LSJSON_STDOUT, None),
+            MOCK_LSJSON_STDOUT,
             {
                 "dir1": {"timestamp": "timevalue1"},
                 "dir2": {"timestamp": "timevalue2"},
@@ -429,7 +431,7 @@ def test_rclone_browse(
             False,
         ),
         # Test that stderr raises exception
-        ((None, "error"), None, True),
+        (b"", None, True),
     ],
 )
 def test_rclone_browse_no_container(

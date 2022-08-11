@@ -56,17 +56,21 @@ class RClone(models.Model):
         """
         cmd = ["rclone"] + subcommand
         try:
-            with subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            ) as proc:
-                (stdout, stderr) = proc.communicate()
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            (stdout, stderr) = proc.communicate()
 
-                LOGGER.debug("rclone cmd: %s", cmd)
-                LOGGER.debug("rclone stdout: %s", stdout)
-                if stderr:
-                    LOGGER.warning(stderr)
+            LOGGER.debug("rclone cmd: %s", cmd)
+            LOGGER.debug("rclone stdout: %s", stdout)
+            if stderr:
+                LOGGER.warning("rclone stderr: %s", stderr)
 
-                return stdout, stderr
+            if proc.returncode != 0:
+                raise StorageException(
+                    "rclone returned non-zero return code: %s. stderr: %s",
+                    proc.returncode,
+                    stderr,
+                )
+            return stdout
         except FileNotFoundError as err:
             err_msg = "rclone executable not found at path. Details: {}".format(err)
             LOGGER.error(err_msg)
@@ -83,7 +87,7 @@ class RClone(models.Model):
     @property
     def remote_prefix(self):
         """Return remote prefix from env vars matching case-insensitive RClone.remote_name."""
-        remotes, _ = self._execute_subprocess(["listremotes"])
+        remotes = self._execute_subprocess(["listremotes"])
         LOGGER.debug("rclone listremotes output: %s", remotes)
         remotes = six.ensure_str(remotes).split("\n")
 
@@ -102,12 +106,14 @@ class RClone(models.Model):
         LOGGER.debug("Test that container '%s' exists", self.container)
         prefixed_container_name = "{}{}".format(self.remote_prefix, self.container)
         cmd = ["ls", prefixed_container_name]
-        _, stderr = self._execute_subprocess(cmd)
-        if stderr:
+        try:
+            self._execute_subprocess(cmd)
+        except StorageException:
             LOGGER.info("Creating container '%s'", self.container)
             create_container_cmd = ["mkdir", prefixed_container_name]
-            _, stderr = self._execute_subprocess(create_container_cmd)
-            if stderr:
+            try:
+                self._execute_subprocess(create_container_cmd)
+            except StorageException:
                 err_msg = "Unable to find or create container {}".format(
                     prefixed_container_name
                 )
@@ -126,19 +132,17 @@ class RClone(models.Model):
 
         prefixed_path = "{}{}{}".format(self.remote_prefix, container, path)
         cmd = ["lsjson", prefixed_path]
-        stdout, stderr = self._execute_subprocess(cmd)
-        LOGGER.debug("lsf output: %s", stdout)
-
-        if stderr:
-            err_msg = "Unable to browse rclone space at path {}".format(prefixed_path)
-            LOGGER.error(err_msg)
-            raise StorageException(err_msg)
+        stdout = self._execute_subprocess(cmd)
 
         directories = set()
         entries = set()
         properties = {}
 
-        objects = json.loads(six.ensure_str(stdout))
+        try:
+            objects = json.loads(six.ensure_str(stdout))
+        except json.decoder.JSONDecodeError:
+            raise StorageException("Unable to decode JSON from rclone lsjson")
+
         for object_ in objects:
             name = object_.get("Name")
 
@@ -182,11 +186,7 @@ class RClone(models.Model):
             "delete",
             "{}{}{}".format(self.remote_prefix, container, delete_path.lstrip("/")),
         ]
-        _, stderr = self._execute_subprocess(cmd)
-        if stderr:
-            err_msg = "Unable to delete package at path {}".format(delete_path)
-            LOGGER.error(err_msg)
-            raise StorageException(err_msg)
+        self._execute_subprocess(cmd)
 
     def move_to_storage_service(self, src_path, dest_path, dest_space):
         """ Moves src_path to dest_space.staging_path/dest_path. """
