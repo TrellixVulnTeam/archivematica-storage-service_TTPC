@@ -5,6 +5,7 @@ import logging
 import os
 import six
 import subprocess
+import time
 
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
@@ -39,6 +40,8 @@ class RClone(models.Model):
         verbose_name = _("RClone")
         app_label = _("locations")
 
+    MAX_RETRIES = 5
+
     ALLOWED_LOCATION_PURPOSE = [
         Location.AIP_STORAGE,
         Location.DIP_STORAGE,
@@ -49,40 +52,63 @@ class RClone(models.Model):
     def _execute_subprocess(self, subcommand):
         """Execute subprocess command.
 
+        Retriable errors from rclone (indicated by exit code 5) will be
+        attempted up to five times, waiting two seconds in between each
+        attempt.
+
         :param subcommand: command to execute (list)
 
         :returns: stdout returned by rclone
-        :throws: StorageException on non-zero exit code
+        :throws: StorageException on non-zero, non-5 exit code or after
+            5 attempts at retriable errors.
         """
         cmd = ["rclone"] + subcommand
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (stdout, stderr) = proc.communicate()
-
-            LOGGER.debug("rclone cmd: %s", cmd)
-            LOGGER.debug("rclone stdout: %s", stdout)
-            if stderr:
-                LOGGER.warning("rclone stderr: %s", stderr)
-
-            if proc.returncode != 0:
-                raise StorageException(
-                    "rclone returned non-zero return code: %s. stderr: %s",
-                    proc.returncode,
-                    stderr,
+        attempt = 0
+        while attempt < self.MAX_RETRIES:
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
                 )
-            return stdout
-        except FileNotFoundError as err:
-            err_msg = "rclone executable not found at path. Details: {}".format(err)
-            LOGGER.error(err_msg)
-            raise StorageException(err_msg)
-        except Exception as err:
-            err_msg = (
-                "Error running rclone command. Command called: {}. Details: {}".format(
+                (stdout, stderr) = proc.communicate()
+
+                LOGGER.debug("rclone cmd: %s", cmd)
+                LOGGER.debug("rclone stdout: %s", stdout)
+                if stderr:
+                    LOGGER.warning("rclone stderr: %s", stderr)
+
+                # Return code of 5 from rclone indicates retriable error.
+                if proc.returncode == 5:
+                    attempt += 1
+                    if attempt >= self.MAX_RETRIES:
+                        err_msg = "rclone failed to succesfully run command after {} attempts".format(
+                            self.MAX_RETRIES
+                        )
+                        LOGGER.error(err_msg)
+                        raise StorageException(err_msg)
+
+                    LOGGER.warning(
+                        "rclone command failed with retriable error. Trying again."
+                    )
+                    time.sleep(2)
+                    continue
+                # Non-zero return code that's not 5 indicates non-retriable error.
+                elif proc.returncode != 0:
+                    raise StorageException(
+                        "rclone returned non-zero return code: %s. stderr: %s",
+                        proc.returncode,
+                        stderr,
+                    )
+                return stdout
+            except FileNotFoundError as err:
+                err_msg = "rclone executable not found at path. Details: {}".format(err)
+                LOGGER.error(err_msg)
+                raise StorageException(err_msg)
+            except Exception as err:
+                err_msg = "Error running rclone command. Command called: {}. Details: {}".format(
                     cmd, err
                 )
-            )
-            LOGGER.error(err_msg)
-            raise StorageException(err_msg)
+                LOGGER.error(err_msg)
+                raise StorageException(err_msg)
 
     @property
     def remote_prefix(self):
